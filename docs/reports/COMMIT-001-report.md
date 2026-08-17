@@ -43,3 +43,10 @@
 - 审查人/时间:
 - 结论: 通过 / 打回(打回原因)
 - 备注:
+
+## G. push 通道裁决补充
+
+- **阻塞事实**:`git push origin main` → 403(`Permission to sugarforever/dsh-lark.git denied to fiultyy`);本机唯一凭据 gh token `fiultyy` 对该仓库仅 `pull`(API `permissions: {'push': False}`),SSH 公钥无 github 授权,仓库非 fork 无个人远端可推。已按纪律 `cb-send ask` 上报,未自行绕行。
+- **裁决结果**(orch1,2026-08-17):方案 B——已创建 fork `github.com/fiultyy/dsh-lark`,添加 remote `fork` 并完成推送 `bef110c..014a598 main->main`;**不建 PR,合并权留用户**。
+- **终验**:`git ls-remote fork main` = `014a5980fd61ac6cf94ea6dfc0d956fec25e9b60` == 本地 HEAD(9 提交之顶);本节补充落 commit 后 `git status` 保持清零、fork 同步。
+- **B③④ 口径修正**:按裁决以"推送至 fork 远端"计——③ push 成功(fork/main)+工作树清零 ✓;④ fork/main HEAD == 本地 HEAD ✓(origin/main 待用户合并时对齐)。
