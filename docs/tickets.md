@@ -202,3 +202,10 @@ done 到达 → 核验报告文件与 done body 一致 → 抽查 B 表证据(�
 - **验证目标**:①commit 数 = 8 代码 + 1 docs(或 CHANGELOG 拆分说明);②每 commit 的文件集与其票报告"代码范围"一致(抽查 LK-001/LK-006);③push 成功且 `git status` 清零;④origin/main HEAD == 本地 HEAD。
 - **验证形式**:git log --oneline + git status + ls-remote 对照(A 节贴原文)。
 - **回报物**:docs/reports/COMMIT-001-report.md · done body:`<判定>;报告:docs/reports/COMMIT-001-report.md;测试:git清零+N commits;备注:<≤60字>`
+
+### COMMIT-001-R1 报告B表勾选+done格式修正 ◐
+
+- **背景**:COMMIT-001 实质全达成(9 commits、fork 推送 014a598、git 清零、71/71 绿,编排者亲验),打回原因仅:①报告 B#3/B#4 仍 [ ] 未勾(与判定 PASS-NOTES 矛盾,G 节文字声明不能替代 B 表);②done body 测试段未按票面格式("git清零+9commits+fork推送"应为"git清零+9commits+fork推送"→ 按票面 done body 模板"测试:git清零+N commits"写)。
+- **任务**:①把 COMMIT-001-report.md 的 B#3/B#4 勾为 [x] 并补证据列(fork ls-remote 哈希 014a5980fd61ac6cf94ea6dfc0d956fec25e9b60 / 本地 HEAD 对照);②修 G 节措辞与新 B 表一致;③重发合规 done(备注 ≤60 字);④除报告编辑外零改动,改完 git status 若因此出现报告 diff,amend 进 43e4884 或新 commit 均可(说明即可)。
+- **验证目标**:①B#1–B#4 全 [x] 且判定无矛盾;②done body 四段格式合规;③git 终态说明清楚。
+- **回报物**:done body + 修订后报告(无新报告文件)。
