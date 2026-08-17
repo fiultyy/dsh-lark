@@ -7,6 +7,10 @@ export interface ConversationMessage {
   chatType: 'p2p' | 'group'
   threadId?: string
   replyToMessageId?: string
+  /** Sender display name for identity prefixing (LK-007). */
+  senderName?: string
+  /** Sender open id, the prefix fallback when no name is available. */
+  senderId?: string
 }
 
 export function conversationKey(message: ConversationMessage): string {
@@ -15,10 +19,13 @@ export function conversationKey(message: ConversationMessage): string {
     : `thread:${message.chatId}:${message.threadId}`
 }
 
-export function toSessionId(domain: DomainName, key: string): SessionId {
-  const digest = createHash('sha256').update(`${domain}\0${key}`).digest('hex').slice(0, 40)
-  // v2 sessions include the Harness workspace and agent-preset composition.
-  // Keep them separate from sessions created by releases that lacked it.
+export function toSessionId(domain: DomainName, key: string, nonce?: string): SessionId {
+  // `/new` and `/cd` deliberately start a fresh session under the same
+  // conversation key; the nonce keeps each generation's id distinct while
+  // staying opaque. v2 sessions include the Harness workspace and
+  // agent-preset composition; keep them separate from older sessions.
+  const material = nonce === undefined ? `${domain}\0${key}` : `${domain}\0${key}\0${nonce}`
+  const digest = createHash('sha256').update(material).digest('hex').slice(0, 40)
   return SessionId(`lark-v2-${digest}`)
 }
 
