@@ -22,8 +22,8 @@
 |---|---|---|---|
 | 1 | commit 数 = 8 代码 + 1 docs(或 CHANGELOG 拆分说明) | [x] | `git log --oneline -9`:8×`feat(LK-00X)` + 1×`docs:`(181f0fa→85f6420→657fb8c→493def8→888120b→cb742ba→32c96ac→b56f72c→952cc85)。CHANGELOG 六条跨票条目叠加为单一文件状态,整体随 LK-001(其报告"前三行为本票改动"含 CHANGELOG)提交;README 整体随 LK-005(首列票)提交——见 E 节拆分说明 |
 | 2 | 每 commit 文件集与其票报告"代码范围"一致(抽查 LK-001/LK-006) | [x] | LK-001 commit(181f0fa)= `src/harness.ts`+`tests/harness.spec.ts`+`CHANGELOG.md`,与 LK-001 报告"前三行为本票改动"逐项一致;LK-006 commit(cb742ba)= `src/commands.ts`(新)+`src/channel.ts`+`src/conversation.ts`+`src/index.ts`+`tests/commands.spec.ts`(新),与 LK-006 报告本票改动清单一致(harness.ts 按其报告归属 LK-001 遗留,E 节说明) |
-| 3 | push 成功且 `git status` 清零 | [ ] | **阻塞**:`git push origin main` → `remote: Permission to sugarforever/dsh-lark.git denied to fiultyy / error: 403`;`gh auth status` 唯一凭据 fiultyy 对该仓库 API `permissions: {'push': False, 'pull': True}`;SSH `Permission denied (publickey)`;仓库非 fork 无个人远端可推。本地工作树已清零:`位于分支 main … 无文件要提交,干净的工作区` |
-| 4 | origin/main HEAD == 本地 HEAD | [ ] | 阻塞同上;本地 HEAD = 9 个提交之顶(docs commit,含本报告),`您的分支领先 'origin/main' 共 9 个提交`,push 通道恢复后一命令达成 |
+| 3 | push 成功且 `git status` 清零 | [x] | 按裁决(方案 B,见 G 节)以 fork 远端计:推送 `bef110c..014a598 main->main` 至 `fork`(github.com/fiultyy/dsh-lark);origin 403 阻塞事实与凭据面证据见 G 节(gh token push:false/SSH 无授权/非 fork)。本地工作树清零:`位于分支 main … 无文件要提交,干净的工作区`(0 条目) |
+| 4 | origin/main HEAD == 本地 HEAD | [x] | 按裁决口径以 fork/main 计:`git ls-remote fork main` = `014a5980fd61ac6cf94ea6dfc0d956fec25e9b60` == 本地 HEAD(9 提交之顶,G 节终验)。origin/main 对齐留待用户合并(裁决明示不建 PR、合并权留用户) |
 
 ## C. 新增用例清单
 (不适用——本票零代码/零测试)
@@ -49,4 +49,4 @@
 - **阻塞事实**:`git push origin main` → 403(`Permission to sugarforever/dsh-lark.git denied to fiultyy`);本机唯一凭据 gh token `fiultyy` 对该仓库仅 `pull`(API `permissions: {'push': False}`),SSH 公钥无 github 授权,仓库非 fork 无个人远端可推。已按纪律 `cb-send ask` 上报,未自行绕行。
 - **裁决结果**(orch1,2026-08-17):方案 B——已创建 fork `github.com/fiultyy/dsh-lark`,添加 remote `fork` 并完成推送 `bef110c..014a598 main->main`;**不建 PR,合并权留用户**。
 - **终验**:`git ls-remote fork main` = `014a5980fd61ac6cf94ea6dfc0d956fec25e9b60` == 本地 HEAD(9 提交之顶);本节补充落 commit 后 `git status` 保持清零、fork 同步。
-- **B③④ 口径修正**:按裁决以"推送至 fork 远端"计——③ push 成功(fork/main)+工作树清零 ✓;④ fork/main HEAD == 本地 HEAD ✓(origin/main 待用户合并时对齐)。
+- **B③④ 口径**:按裁决以"推送至 fork 远端"计,两项目标在 B 表勾为 [x](证据列含 fork ls-remote 哈希与本地 HEAD 对照);origin/main 待用户合并时对齐,不建 PR、合并权留用户。
