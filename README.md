@@ -250,9 +250,25 @@ dsh-lark: WebSocket connected
 
 默认配置下，没有 @机器人的群消息会被忽略。如果关闭 `requireMention`，还需要确保应用获得接收群内全部消息的权限，并经过企业管理员批准。
 
+
 ### 话题群
 
 话题中的消息会使用 `chat_id + thread_id` 建立独立 Session。不同话题不会共享对话记录，机器人回复会留在原来的话题中。
+
+## 飞书内 `/` 指令
+
+机器人收到的消息首词恰为 `/resume`、`/model`、`/cd`、`/new`、`/stop`、`/help` 之一时,会作为指令处理(不进入 Agent 回合);未知指令显示帮助。形如 `/src/main.ts` 的路径、正文中的 `/resume` 字样与普通消息不受影响,仍交给 Agent。
+
+| 指令 | 行为 |
+| --- | --- |
+| `/resume` | 从宿主 `sessionQuery` 读取最近会话(标题目录:工作目录 + 创建时间),发送选择卡片;点选后本聊天绑定切换到该会话,续聊即接上历史,跨重启同样生效 |
+| `/model` | 拉取宿主已注册 Provider 的模型列表,选择卡片;点选后下一轮起生效 |
+| `/cd` | 列出已注册 Workspace,选择卡片;点选后切换工作目录并开启新会话 |
+| `/new` | 列出可用 Agent Preset,选择卡片;点选后开新会话并挂载所选 Preset |
+| `/stop` | 取消本聊天正在运行的回合并确认;空闲时提示无任务 |
+| `/help` | 显示指令帮助;未知指令同此 |
+
+会话绑定与各聊天的模型/目录/Preset 覆盖持久化在 `$DSH_HOME/storages/dsh-lark-bindings.json`,重启后自动恢复。话题群内每个话题独立成键,卡片按话题路由。
 
 ## 完整配置
 
@@ -275,7 +291,12 @@ dsh-lark: WebSocket connected
     model: deepseek-v4-flash
     workspace: /absolute/path/to/workspace
     agentPreset: coding
-    errorMessage: 抱歉，处理这条消息时遇到了问题，请稍后重试。
+    interactionPolicy: deny-all
+    interactionTimeoutMs: 30000
+    interactionCards: true
+    cardInteractionTimeoutMs: 120000
+    streamCards: true
+    streamThrottleMs: 800
 ```
 
 | 配置项 | 必填 | 默认值 | 说明 |
@@ -291,7 +312,23 @@ dsh-lark: WebSocket connected
 | `model` | 否 | Harness 默认值 | 为这个渠道指定模型 |
 | `workspace` | 否 | 第一个已注册 Workspace；没有时为 DSH 进程工作目录 | Agent 使用的工作目录；显式路径优先 |
 | `agentPreset` | 否 | Harness 当前默认 Preset | Agent 使用的 Preset，决定工具、系统提示等组合 |
+| `interactionPolicy` | 否 | `off` | 交互兜底策略:`off`(关闭,与历史行为一致)/`allow-all`/`deny-all`/`custom`;开启后 ask 类问题由策略应答、approval 由策略决定,并向系统提示注入"以最终答复代替中途提问"引导 |
+| `askAutoAnswer` | 否 | 内置文案 | `custom` 策略下无选项 ask 问题的自由文本回答 |
+| `approvalAllow` | 否 | `false` | `custom` 策略下 approval 的决定;`true` 放行,`false` 拒绝 |
+| `interactionTimeoutMs` | 否 | `0` | 机器策略应答前等待的毫秒数(给卡片/人工通道留窗口),0 立即应答 |
+| `interactionCards` | 否 | `false` | LK-003 交互卡片:approval 弹允许/拒绝按钮卡、ask 弹选项按钮组,点击即回填;超时按 `interactionPolicy` 回落并标注卡片;per-agent 限定,非飞书会话不受影响 |
+| `cardInteractionTimeoutMs` | 否 | `120000` | 交互卡片等待按钮点击的毫秒数,超时回落策略应答 |
+| `maxReplyChars` | 否 | `4000` | 单条回复分片的最大码点数，超出时按段落/行/码点顺序切片发送 |
+| `streamCards` | 否 | `false` | LK-004 流式卡片:assistant 输出实时流入进度卡片(节流合并),终态卡片与最终回复一致;卡片 API 失败时静默降级回文本通道,回复不丢 |
+| `streamThrottleMs` | 否 | `800` | 流式卡片更新合并窗口(毫秒) |
+| `plainTextReplies` | 否 | `false` | 降级开关：回复以纯文本发送而不是 markdown |
 | `errorMessage` | 否 | 内置中文提示 | Agent 执行失败时返回给用户的文本，最长 500 个字符 |
+| `senderLabel` | 否 | `group` | LK-007 发送者身份前缀:`group`(仅群聊 content 前拼 `[sender]`)/`always`(单聊也拼)/`off`(不拼);入站图片经 attachments 服务入库成 image block,文件落 `$DSH_HOME/storages/dsh-lark-files/` 并在正文附路径引用 |
+| `commentReplies` | 否 | `true` | LK-009 云文档评论:评论 @机器人 时触发一轮 agent,应答回复到该评论线程(经 drive.comment.reply API);`false` 关闭 |
+
+### 多实例与单应用单连接约束
+
+一个飞书/Lark 应用只允许**一条** WebSocket 长连接。同宿主进程内用**不同 appId 各开一个实例**是多 profile 的正确方式(每个实例独立凭据、独立会话空间,互不串扰);**同一 appId 的第二个实例会在启动时立即报错**(`one WebSocket connection`),避免两实例互相争抢事件。跨进程重复用同一 appId 则由飞书平台断开旧连接——务必避免。
 
 `provider` 和 `model` 建议同时设置。如果都不设置，插件会读取 Harness 当前的默认模型配置。
 
