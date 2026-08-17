@@ -215,6 +215,46 @@ domain: lark
 
 这里仍然是覆盖已有的 `lark-channel` 实例，不要添加 `insert` 或重复的 `name`。
 
+## 热载启用(免重启进入运行中的主进程)
+
+从 v0.1.2 起,插件是**热载就绪**的:在一个已经运行的 Web Profile 主进程里,通过用户 patch 层即可挂载、重载、卸载 `lark-channel` 实例,**不需要重启 host**。
+
+### 机制(host 侧,只读参照)
+
+dsh CLI 启动器始终监视两层 patch 文件并做事务性重组(`watchUserPatches`):
+
+- `~/.dsh/profiles/<profile>/cordis.patch.yml`(profile patch 层)
+- `~/.dsh/cordis.patch.yml`(home patch 层)
+
+web bundle 里那条注释禁用的 `hmr` 条目是**共享 HMR**(源码级热替换,Web 的 reload 生命周期未测),与本机制无关;启动器会单独挂载一个仅供 patch 文件监视的 HMR 服务,两层照常监视。插件侧不依赖、也不需要任何 HMR 条目。
+
+### 热载场景请使用字面量凭据
+
+运行中的进程**读不到启动之后新注入的环境变量**。`!!js process.env.FEISHU_APP_ID` 在每次 patch 重载时都会重新求值,但求值结果仍来自启动时固化的进程环境——热载时新 env 变量通常是 `undefined`,会因凭据缺失被拒绝。因此热载启用/重载实例时,把凭据作为字面量写进 patch:
+
+```yaml
+- id: lark-channel
+  disabled: false
+  config:
+    appId: cli_xxxxxxxxxxxxxxxx      # 字面量;同时配置 appIdEnv 时字面量优先
+    appSecret: xxxxxxxxxxxxxxxxxxxxxx
+    domain: feishu
+```
+
+也可以用新增的 `appIdEnv`/`appSecretEnv` 字段按**变量名**引用(条目加载时从运行中进程读取);字面量与变量名并存时**非空字面量优先**。两种写法都缺失时,该条目加载失败并给出明确报错。
+
+字面量凭据只应出现在 `0600` 权限、仅限当前用户可读的 patch 文件中,不要提交进任何仓库。
+
+### 重载与失败回退
+
+- **重载**:保存 patch 文件后,条目先完整卸载再以新配置挂载。卸载会关闭 WebSocket、退订全部事件、还原 `userQuestions` 包装、清空 per-conversation chains 与卡片等待项、释放 appId 占用;会话绑定(`$DSH_HOME/storages/dsh-lark-bindings.json`)持久化保留,重载后自动恢复。
+- **配置被拒**:新配置校验失败(如凭据缺失、格式错误)时,该次变更被拒绝,旧树继续运行——运行中的实例不受影响。
+- **挂载失败**:配置合法但连接失败(如凭据错误)时,该条目进入 failed 状态并记录错误;修正 patch 再次保存即可重试。
+- **卸载**:把条目改回 `disabled: true`(或删除你的覆盖行恢复 bundle 默认的禁用状态),保存后连接关闭、资源全部释放。
+- 同一 appId 不允许在同进程出现两个实例;把条目改成新 appId 保存即完成凭据轮换(appId 占用随卸载先行释放)。
+
+真机热载验证路径:装 fork → 写字面量 patch → 观察挂载日志(`dsh-lark: WebSocket connected`)与飞书消息往返 → patch 回退观察卸载日志(`dsh-lark: WebSocket disconnected`),全程 host 不重启。
+
 ## 启动 Harness
 
 确认环境变量已经设置，再启动 Web Profile：
@@ -273,7 +313,6 @@ dsh-lark: WebSocket connected
 ## 完整配置
 
 下面的例子包含目前支持的所有配置项：
-
 ```yaml
 - id: lark-channel
   disabled: false
@@ -301,8 +340,10 @@ dsh-lark: WebSocket connected
 
 | 配置项 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `appId` | 是 | 无 | 飞书或 Lark 应用的 App ID |
-| `appSecret` | 是 | 无 | 应用的 App Secret，建议从环境变量读取 |
+| `appId` | 二选一 | 无 | 飞书或 Lark 应用的 App ID 字面量;与 `appIdEnv` 同时配置时非空字面量优先(热载场景推荐) |
+| `appSecret` | 二选一 | 无 | 应用的 App Secret 字面量;与 `appSecretEnv` 同时配置时非空字面量优先 |
+| `appIdEnv` | 否 | 无 | 存放 App ID 的**环境变量名**,条目加载时从运行中进程读取;host 的 `!!js` env 插值落到字面量路径 |
+| `appSecretEnv` | 否 | 无 | 存放 App Secret 的**环境变量名**,条目加载时从运行中进程读取 |
 | `domain` | 否 | `feishu` | 中国版使用 `feishu`，国际版使用 `lark` |
 | `requireMention` | 否 | `true` | 群聊是否必须 @机器人 |
 | `dmMode` | 否 | `open` | 单聊策略：`open`、`allowlist` 或 `disabled` |
@@ -392,8 +433,8 @@ dmMode: disabled
 
 ## 安全说明
 
-- App Secret 只应存在于环境变量或 Secret Manager 中。
-- `cordis.patch.yml` 应通过 `process.env` 读取凭据。
+- App Secret 只应存在于环境变量、Secret Manager,或 `0600` 权限、仅当前用户可读的 patch 文件字面量(热载场景,见「热载启用」)中。
+- 重启式部署通过 `process.env` 或 `appIdEnv`/`appSecretEnv` 读取凭据;热载场景运行中的进程读不到新注入的环境变量,应使用字面量。
 - 插件不会记录 App ID 和 App Secret。
 - Agent 的异常堆栈不会发送给飞书用户。
 - 用户只能看到 `errorMessage` 中配置的失败提示。
@@ -402,6 +443,9 @@ dmMode: disabled
 
 ## 常见问题
 
+### 修改配置后没有生效
+
+改的是 profile/home 的 `cordis.patch.yml` 时,保存即热载生效(见「热载启用」),无需重启;只有 `.env`、环境变量等启动时环境的修改才需要重启 Harness。热载场景请用字面量凭据或 `appIdEnv`/`appSecretEnv`——运行中的进程读不到启动之后新注入的环境变量。
 ### 启动时提示鉴权失败
 
 检查 App ID 和 App Secret 是否来自同一个应用，环境变量是否在启动 DSH 的进程中可见。如果凭据曾经泄露，应先在开发者后台轮换 App Secret。
@@ -433,10 +477,6 @@ dmMode: disabled
 ### 长连接反复重连
 
 检查运行环境能否访问飞书的 HTTPS 和 WebSocket 服务，并检查企业代理、防火墙、TLS 中间人或网络出口限制。不要为同一个应用启动多个插件实例。
-
-### 修改配置后没有生效
-
-停止并重新启动 Harness。插件实例和 WebSocket 连接在 Profile 启动时创建，修改 YAML 后需要重新加载。
 
 ## 升级和卸载
 

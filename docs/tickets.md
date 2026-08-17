@@ -209,3 +209,20 @@ done 到达 → 核验报告文件与 done body 一致 → 抽查 B 表证据(�
 - **任务**:①把 COMMIT-001-report.md 的 B#3/B#4 勾为 [x] 并补证据列(fork ls-remote 哈希 014a5980fd61ac6cf94ea6dfc0d956fec25e9b60 / 本地 HEAD 对照);②修 G 节措辞与新 B 表一致;③重发合规 done(备注 ≤60 字);④除报告编辑外零改动,改完 git status 若因此出现报告 diff,amend 进 43e4884 或新 commit 均可(说明即可)。
 - **验证目标**:①B#1–B#4 全 [x] 且判定无矛盾;②done body 四段格式合规;③git 终态说明清楚。
 - **回报物**:done body + 修订后报告(无新报告文件)。
+
+### LK-010 热载就绪改造(cordis 原则,免重启进当前主进程)☑
+
+- **背景/目标**:当前启用路径要求重启 host(patch 变更后 README 口径"改配置需重启")。目标:把插件改造为**热载就绪**——在运行中的 web profile 主进程里,通过用户 patch 层(watchUserPatches 事务性重组)免重启挂载/重载/卸载 lark-channel 实例,且挂载失败不伤 host(保留上一可用树)。
+- **参照机制**(app-boot 源读,只读):`watchUserPatches` 对 profile cordis.patch.yml 事务重组;候选被拒时旧树继续;`ctx.effect`/fiber dispose 语义;web bundle 内 `hmr` 条目被 `disabled: true`(注释:Web 的 reload 生命周期未测)——**插件侧改造不依赖该条目,patch 文件监视与共享 HMR 是两回事,需在票内验证此判断**。
+- **任务清单**:
+  1. **审计现有生命周期**(src/index.ts apply/stop 路径):列出全部非 cordis 托管资源(WS 连接、per-key chains、bindings 持久化监听、attachment 缓存、卡片 hub、userQuestions 包装)→ 逐项给出 dispose 挂钩(ctx.effect / fiber.onDispose);目标:Loader 重载/卸载该条目时零残留。
+  2. **userQuestions 包装的热载安全**:LK-002 E1 的条件包装(shared service 实例方法替换)在条目重载时必须先还原再重包(否则双包/旧闭包泄漏);包装注册与还原必须挂 effect。
+  3. **重载等价性**:dispose→apply 循环后行为等价(WS 重连、绑定文件重读、chains 清空但绑定保留);写 test 模拟两次 apply/dispose 循环断言无状态泄漏(Map 长度、监听器数、包装计数)。
+  4. **env→字面量凭据降级**:config schema 增加直接凭据字段(appId/appSecret 字面量),与 env 插值并存(字面量优先);README 注明热载场景用字面量(运行中进程 env 注入不可行)。
+  5. **自测脚本**:`tests/hot-reload.spec.ts` — apply→dispose→apply 双循环、dispose 后资源零残留计数、包装还原、config 字面量优先级。
+- **验证目标**:①双循环重载行为等价(测试断言);②dispose 后零残留(全部资源计数归零);③字面量凭据路径生效且 env 路径不回归;④README 增加"热载启用"章节(patch 示例+字面量凭据+失败回退说明)。
+- **验证形式**:自动 = 新 spec(①–③)+ 全量回归;冒烟(留编排者/orchestrator) = 真机热载实验:装 fork→写字面量 patch→观察挂载日志/飞书消息往返→patch 回退观察卸载——host 不重启。
+- **路径**:src/index.ts(为主)+ src/harness.ts + src/config.ts + README.zh.md + tests/hot-reload.spec.ts。
+- **量**:中–大 · **依赖**:无 · **红线**:DSH 本体零改动;只读参照 app-boot 源码。
+- **回报物**:docs/reports/LK-010-report.md · B 表预填:①双循环等价 ②零残留 ③字面量优先/env不回归 ④README热载章节
+- **done body**:`<判定>;报告:docs/reports/LK-010-report.md;测试:+<N>/<总数>全绿;备注:<≤60字>`

@@ -6,8 +6,14 @@ export type DirectMessageMode = 'open' | 'allowlist' | 'disabled'
 export type InteractionPolicyKind = 'off' | 'allow-all' | 'deny-all' | 'custom'
 
 export interface Config {
-  appId: string
-  appSecret: string
+  /** Literal App ID; wins over appIdEnv when non-empty (hot-reload safe). */
+  appId?: string
+  /** Literal App Secret; wins over appSecretEnv when non-empty (hot-reload safe). */
+  appSecret?: string
+  /** Env var name holding the App ID, read from the running process at entry load; a literal appId wins. */
+  appIdEnv?: string
+  /** Env var name holding the App Secret, read from the running process at entry load; a literal appSecret wins. */
+  appSecretEnv?: string
   domain?: DomainName
   requireMention?: boolean
   dmMode?: DirectMessageMode
@@ -55,8 +61,10 @@ export interface ResolvedConfig extends Required<Pick<Config,
 }
 
 export const ConfigSchema: z<Config> = z.object({
-  appId: z.string().required().description('Feishu/Lark application ID'),
-  appSecret: z.string().role('secret').required().description('Feishu/Lark application secret'),
+  appId: z.string().description('Feishu/Lark application ID as a literal; takes precedence over appIdEnv'),
+  appSecret: z.string().role('secret').description('Feishu/Lark application secret as a literal; takes precedence over appSecretEnv'),
+  appIdEnv: z.string().description('Env var name holding the App ID, read from the running process when the entry loads; a hot reload cannot see env vars added after launch, use literals there'),
+  appSecretEnv: z.string().description('Env var name holding the App Secret, read from the running process when the entry loads; a hot reload cannot see env vars added after launch, use literals there'),
   domain: z.union(['feishu', 'lark']).default('feishu'),
   requireMention: z.boolean().default(true),
   dmMode: z.union(['open', 'allowlist', 'disabled']).default('open'),
@@ -82,13 +90,13 @@ export const ConfigSchema: z<Config> = z.object({
 })
 
 export function resolveConfig(config: Config): ResolvedConfig {
-  if (config.appId.trim() === '') throw new TypeError('appId is required')
-  if (config.appSecret.trim() === '') throw new TypeError('appSecret is required')
+  const appId = resolveCredential('appId', config.appId, config.appIdEnv)
+  const appSecret = resolveCredential('appSecret', config.appSecret, config.appSecretEnv)
   const errorMessage = config.errorMessage ?? '抱歉，处理这条消息时遇到了问题，请稍后重试。'
   if (errorMessage.length > 500) throw new TypeError('errorMessage must not exceed 500 characters')
   const base = {
-    appId: config.appId,
-    appSecret: config.appSecret,
+    appId,
+    appSecret,
     domain: config.domain ?? 'feishu',
     requireMention: config.requireMention ?? true,
     dmMode: config.dmMode ?? 'open',
@@ -115,4 +123,21 @@ export function resolveConfig(config: Config): ResolvedConfig {
     ...(config.askAutoAnswer === undefined ? {} : { askAutoAnswer: config.askAutoAnswer }),
     ...(config.approvalAllow === undefined ? {} : { approvalAllow: config.approvalAllow }),
   }
+}
+
+/**
+ * One credential by literal-or-env resolution: a non-blank literal wins over
+ * the named environment variable (the running process's env is fixed at
+ * launch, so literals are the reliable path for hot reloads). Neither path
+ * yielding a value is a load-time error.
+ */
+function resolveCredential(kind: 'appId' | 'appSecret', literal: string | undefined, envName: string | undefined): string {
+  if (literal !== undefined && literal.trim() !== '') return literal
+  const name = envName?.trim()
+  if (name !== undefined && name !== '') {
+    const fromEnv = process.env[name]
+    if (fromEnv !== undefined && fromEnv.trim() !== '') return fromEnv
+    throw new TypeError(`${kind}: environment variable ${name} is not set to a non-empty value in this process`)
+  }
+  throw new TypeError(`${kind} is required: set ${kind} (literal) or ${kind}Env (environment variable name)`)
 }

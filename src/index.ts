@@ -91,4 +91,17 @@ export async function apply(ctx: Context, rawConfig: PluginConfig): Promise<void
     ...(attachments === undefined ? {} : { attachments }),
     filesDir: join(dshHome, 'storages', 'dsh-lark-files'),
   })
+  // Hot-reload readiness: the whole non-cordis resource tree (WS channel,
+  // card hub, bridge) hangs off this one disposer, so entry reload/unload
+  // tears it down in LIFO order — channel first, then the userQuestions
+  // unwrap, then the appId release.
+  try {
+    ctx.effect(() => stop, 'dsh-lark: channel teardown')
+  } catch (error) {
+    // The fiber was unloaded while apply awaited the connection: nothing
+    // will run this disposer, so tear the channel down here and let the
+    // rejection surface on the (already disposing) fiber.
+    await stop()
+    throw error
+  }
 }

@@ -214,8 +214,11 @@ export function wrapUserQuestions(
     logger?.info(`dsh-lark: ask settled for ${answers.length} question(s) via card (${result.kind})`)
     return { answers }
   }
-  service.ask = (request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> => {
-    if (!ownsAgent(request.agent)) return original(request)
+  let active = true
+  const ask = (request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> => {
+    // A disposed layer (it may stay reachable under a newer wrapper) passes
+    // straight through instead of consulting its dead hub/policy closures.
+    if (!active || !ownsAgent(request.agent)) return original(request)
     if (policy.kind === 'off' && cards === undefined) return original(request)
     return cardAsk(request).then(answer => {
       if (answer !== undefined) return answer
@@ -234,7 +237,16 @@ export function wrapUserQuestions(
       })
     })
   }
-  return () => { service.ask = original }
+  service.ask = ask
+  return () => {
+    // Reload safety: deactivate first, then restore only while this wrapper
+    // is still the installed one. A newer layer that wrapped on top keeps
+    // the chain (and reaches this layer as a plain passthrough), so an
+    // entry reload never clobbers a sibling instance's wrapper or leaks a
+    // dead closure as the installed `ask`.
+    active = false
+    if (service.ask === ask) service.ask = original
+  }
 }
 
 interface AgentLike {
@@ -523,7 +535,14 @@ export class HarnessConversationService implements ConversationControls {
     await Promise.allSettled([...this.chains.values()])
     const handles = await Promise.allSettled(this.handles.values())
     await Promise.all(handles.flatMap(result => result.status === 'fulfilled' ? [result.value.dispose()] : []))
+    // Hot-reload readiness: after teardown the service instance itself must
+    // be residue-free — every per-conversation structure is emptied so a
+    // reload starts from the persisted bindings alone, never stale maps.
     this.handles.clear()
+    this.chains.clear()
+    this.activeTurns.clear()
+    this.stopFlags.clear()
+    this.activeStream = undefined
   }
 
   private async dropHandle(key: string): Promise<void> {
