@@ -10,3 +10,16 @@
         domain: feishu
         requireMention: true
         dmMode: open
+
+# Multi-profile (LK-009): additional instances must use a DIFFERENT appId —
+# a Feishu/Lark app allows exactly one WebSocket connection per host process.
+# Duplicate the block below with its own id and credentials, e.g.:
+#
+# - insert:
+#     - id: lark-channel-2
+#       name: '@sugarforever/dsh-lark'
+#       disabled: true
+#       config:
+#         appId: !!js process.env.FEISHU_APP_ID_2
+#         appSecret: !!js process.env.FEISHU_APP_SECRET_2
+#         domain: feishu

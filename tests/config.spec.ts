@@ -26,4 +26,9 @@ describe('resolveConfig', () => {
   it('rejects an unbounded error response', () => {
     expect(() => resolveConfig({ appId: 'id', appSecret: 'secret', errorMessage: 'x'.repeat(501) })).toThrow(/errorMessage/)
   })
+
+  it('defaults comment replies on and lets operators disable them', () => {
+    expect(resolveConfig({ appId: 'id', appSecret: 'secret' }).commentReplies).toBe(true)
+    expect(resolveConfig({ appId: 'id', appSecret: 'secret', commentReplies: false }).commentReplies).toBe(false)
+  })
 })
